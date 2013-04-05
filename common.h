@@ -77,6 +77,8 @@ void initSuperBloque(MiSistemaDeFicheros* miSistemaDeFicheros, int tamDisco);
 int escribeSuperBloque(MiSistemaDeFicheros* miSistemaDeFicheros);
 int escribeDirectorio(MiSistemaDeFicheros* miSistemaDeFicheros);
 int escribeDatos(MiSistemaDeFicheros* miSistemaDeFicheros, int archivoExterno, int numNodoI);
+int exportaDatos(MiSistemaDeFicheros* miSistemaDeFicheros, int handle,
+		int idxNodoI);
 int calculaPosNodoI(int numNodoI);
 void initNodosI(MiSistemaDeFicheros* miSistemaDeFicheros);
 int leeNodoI(MiSistemaDeFicheros* miSistemaDeFicheros, int numNodoI, EstructuraNodoI* nodoI);

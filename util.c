@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 // Formatea el disco virtual. Guarda el mapa de bits del super bloque 
 // y el directorio único.
@@ -57,12 +58,13 @@ int myMkfs(MiSistemaDeFicheros* miSistemaDeFicheros, int tamDisco,
 	escribeDirectorio(miSistemaDeFicheros);
 
 	/// NODOS-I
-	EstructuraNodoI nodoActual; //auxiliar para inicializacion
+	EstructuraNodoI nodoActual; //auxiliar para inicializacions
 	nodoActual.libre = 1;
 	// Escribimos nodoActual MAX_NODOSI veces en disco
 	for (i = 0; i < MAX_NODOSI; i++) {
-		miSistemaDeFicheros->nodosI[i] = &nodoActual;
 		escribeNodoI(miSistemaDeFicheros, i, &nodoActual);
+		//Poner array nodos-i a NULL
+		miSistemaDeFicheros->nodosI[i] = NULL;
 	}
 
 	/// SUPERBLOQUE
@@ -109,57 +111,73 @@ int myImport(char* nombreArchivoExterno,
 	}
 
 	/// Comprobamos que hay suficiente espacio
-	if (stStat.st_size >
-			miSistemaDeFicheros->superBloque.numBloquesLibres * TAM_BLOQUE_BYTES){
+	if (stStat.st_size > miSistemaDeFicheros->superBloque.numBloquesLibres
+			* TAM_BLOQUE_BYTES) {
 		fprintf(stderr, "No hay suficiente espacio en disco\n");
 		return 3;
 	}
 
 	/// Comprobamos que el tamaño total es suficientemente pequeño
 	/// para ser almacenado en MAX_BLOCKS_PER_FILE
-	if (stStat.st_size > (TAM_BLOQUE_BYTES * MAX_BLOQUES_POR_ARCHIVO)){
+	if (stStat.st_size > (TAM_BLOQUE_BYTES * MAX_BLOQUES_POR_ARCHIVO)) {
 		fprintf(stderr, "El archivo a copiar es demasido grande\n");
 		return 4;
 	}
 
 	/// Comprobamos que la longitud del nombre del archivo es adecuada
-	if (strlen(nombreArchivoInterno) > MAX_TAM_NOMBRE_ARCHIVO){
+	if (strlen(nombreArchivoInterno) > MAX_TAM_NOMBRE_ARCHIVO) {
 		fprintf(stderr, "Nombre de archivo demasiado grande\n");
 		return 5;
 	}
 
 	/// Comprobamos que el fichero no existe ya
-	if (buscaPosDirectorio(miSistemaDeFicheros, nombreArchivoInterno) != -1){
+	if (buscaPosDirectorio(miSistemaDeFicheros, nombreArchivoInterno) != -1) {
 		fprintf(stderr, "El archivo a copiar ya existe\n");
 		return 6;
 	}
 
 	/// Comprobamos si existe un nodo-i libre
-	if (nodoLibre == -1){
+	if (nodoLibre == -1) {
 		fprintf(stderr, "No existen nodos-i libres\n");
 		return 7;
 	}
 
 	/// Comprobamos que todavía cabe un archivo en el directorio (MAX_ARCHIVOS_POR_DIRECTORIO)
-	if (miSistemaDeFicheros->directorio.numArchivos == MAX_ARCHIVOS_POR_DIRECTORIO){
+	if (miSistemaDeFicheros->directorio.numArchivos
+			== MAX_ARCHIVOS_POR_DIRECTORIO) {
 		fprintf(stderr, "No caben mas archivos en el directorio\n");
 		return 8;
 	}
 
 	/// Actualizamos toda la información:
 	/// mapa de bits, directorio, nodo-i, bloques de datos, superbloque ...
-	EstructuraNodoI *nodo = malloc(sizeof (EstructuraNodoI));
+	/****************Nodo-i***********************/
+	EstructuraNodoI *nodo = malloc(sizeof(EstructuraNodoI));
+
 	nodo->tamArchivo = stStat.st_size;
-	nodo->numBloques = (stStat.st_size / TAM_BLOQUE_BYTES) + 1;
+	nodo->numBloques = ((stStat.st_size + (TAM_BLOQUE_BYTES - 1))
+			/ TAM_BLOQUE_BYTES);
 	nodo->libre = 0;
-
-
+	nodo->tiempoModificado = time(0);
 	miSistemaDeFicheros->nodosI[nodoLibre] = nodo;
-	reservaBloquesNodosI(miSistemaDeFicheros, nodo->idxBloques, nodo->numBloques);
+	miSistemaDeFicheros->numNodosLibres--;
+
+	reservaBloquesNodosI(miSistemaDeFicheros, nodo->idxBloques,
+			nodo->numBloques);
+
 	escribeNodoI(miSistemaDeFicheros, nodoLibre, nodo);
-	escribeMapaDeBits(miSistemaDeFicheros);
+	/***************bloque de datos*****************/
+
 	escribeDatos(miSistemaDeFicheros, handle, nodoLibre);
+
+	escribeMapaDeBits(miSistemaDeFicheros);
+
+	miSistemaDeFicheros->directorio.numArchivos++;
+	miSistemaDeFicheros->directorio.archivos[nodoLibre].libre = 0;
+	strcpy(miSistemaDeFicheros->directorio.archivos[nodoLibre].nombreArchivo,
+			nombreArchivoInterno);
 	escribeDirectorio(miSistemaDeFicheros);
+	miSistemaDeFicheros->superBloque.numBloquesLibres -= nodo->numBloques;
 	escribeSuperBloque(miSistemaDeFicheros);
 
 	sync();
@@ -172,14 +190,52 @@ int myExport(MiSistemaDeFicheros* miSistemaDeFicheros,
 	int handle;
 
 	/// Buscamos el archivo nombreArchivoInterno en miSistemaDeFicheros
+	int posDirectorio = buscaPosDirectorio(miSistemaDeFicheros,
+			nombreArchivoInterno);
+	if (posDirectorio == -1) {
+		perror(" El archivo a exportar no existe");
+		return 1;
+	}
 	// ...
 
 	/// Si ya existe el archivo nombreArchivoExterno en linux preguntamos si sobreescribir
-	// ...
+	handle = open(nombreArchivoExterno, O_WRONLY);
+	if (handle != -1) {
+		printf("El archivo ya existe,desea sobreescribir?(y/N):\n");
+		char option;
+		scanf("%c", &option);
+		if (option == 'n' || option == 'N') {
+			printf("%s", "Escribe otro nombre de archivo:\n");
+			scanf("%s", nombreArchivoExterno);
+			handle = creat(nombreArchivoExterno, O_WRONLY);
+		} else if (option == 'y' || option == 'Y') {
+			handle = open(nombreArchivoExterno, O_WRONLY, O_TRUNC);
+		}
+	} else {
+		handle = creat(nombreArchivoExterno, O_WRONLY);
+	}
 
 	/// Copiamos bloque a bloque del archivo interno al externo
-	// ...
+	int idxNodoI =
+			miSistemaDeFicheros->directorio.archivos[posDirectorio].idxNodoI;
 
+	exportaDatos(miSistemaDeFicheros, handle, idxNodoI);
+	/*
+	int i;
+	char buffer[TAM_BLOQUE_BYTES];
+	EstructuraNodoI* temp = miSistemaDeFicheros->nodosI[idxNodoI];
+	int bytesRestantes = miSistemaDeFicheros->superBloque.tamBloque - (temp->numBloques * miSistemaDeFicheros->superBloque.tamBloque - temp->tamArchivo);
+	for (i = 0; i < miSistemaDeFicheros->nodosI[idxNodoI]->numBloques - 1; ++i) {
+		if (write(handle, &buffer, TAM_BLOQUE_BYTES) == -1) {
+			perror("Falló write en escribeDatos");
+			return -1;
+		}
+	}
+
+	if (write(handle, &buffer, bytesRestantes) == -1) {
+	        perror("Falló write (2) en escribeDatos");
+	    }
+*/
 	if (close(handle) == -1) {
 		perror("myExport close");
 		printf("Error, myExport close.\n");
@@ -191,27 +247,69 @@ int myExport(MiSistemaDeFicheros* miSistemaDeFicheros,
 int myRm(MiSistemaDeFicheros* miSistemaDeFicheros, char* nombreArchivo) {
 	/// Completar:
 	// Busca el archivo con nombre "nombreArchivo"
+	int posDirectorio = buscaPosDirectorio(miSistemaDeFicheros, nombreArchivo);
+	if (posDirectorio == -1) {
+		fprintf(stderr, "El archivo a borrar no existe\n");
+		return 1;
+	}
+
 	// Obtiene el nodo-i asociado y lo actualiza
+	int posNodoI =
+			miSistemaDeFicheros->directorio.archivos[posDirectorio].idxNodoI;
+	EstructuraNodoI *nodoI = miSistemaDeFicheros->nodosI[posNodoI];
+	nodoI->libre = 1;
+
 	// Actualiza el superbloque (numBloquesLibres) y el mapa de bits
+	miSistemaDeFicheros->superBloque.numBloquesLibres += nodoI->numBloques;
+	int i;
+	for (i = 0; i < nodoI->numBloques; i++) {
+		miSistemaDeFicheros->mapaDeBits[nodoI->idxBloques[i]] = 0;
+	}
 	// Libera el puntero y lo hace NULL
+
+
 	// Actualiza el archivo
+	miSistemaDeFicheros->directorio.archivos[posDirectorio].libre = 1;
 	// Finalmente, actualiza en disco el directorio, nodoi, mapa de bits y superbloque
+
+	escribeNodoI(miSistemaDeFicheros, posNodoI, nodoI);
+	escribeMapaDeBits(miSistemaDeFicheros);
+	escribeSuperBloque(miSistemaDeFicheros);
 	// ...
+	free(nodoI);
+
 	return 0;
 }
 
 void myLs(MiSistemaDeFicheros* miSistemaDeFicheros) {
-	//struct tm* localTime;
 	int numArchivosEncontrados = 0;
 	//EstructuraNodoI nodoActual;
 	int i;
 	// Recorre el sistema de ficheros, listando los archivos encontrados
+	printf("%s\n", "Lista de archivos");
+
 	for (i = 0; i < MAX_ARCHIVOS_POR_DIRECTORIO; i++) {
-		// ...
+		if (miSistemaDeFicheros->directorio.archivos[i].libre == 0) {
+			printf("%s\t",
+					miSistemaDeFicheros->directorio.archivos[i].nombreArchivo);
+			printf("%d\t", miSistemaDeFicheros->nodosI[i]->tamArchivo);
+
+			struct tm *tlocal = localtime(
+					&miSistemaDeFicheros->nodosI[i]->tiempoModificado);
+			char output[128];
+			strftime(output, 128, "%d/%m/%y %H:%M:%S", tlocal);
+			printf("%s\n", output);
+
+			numArchivosEncontrados++;
+		}
+
 	}
 
 	if (numArchivosEncontrados == 0) {
 		printf("Directorio vacío\n");
+	} else {
+		printf("Número total de archivos:%d\n",
+				miSistemaDeFicheros->directorio.numArchivos);
 	}
 }
 
