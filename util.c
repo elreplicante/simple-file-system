@@ -209,10 +209,10 @@ int myExport(MiSistemaDeFicheros* miSistemaDeFicheros,
 			scanf("%s", nombreArchivoExterno);
 			handle = creat(nombreArchivoExterno, O_WRONLY);
 		} else if (option == 'y' || option == 'Y') {
-			handle = open(nombreArchivoExterno, O_WRONLY, O_TRUNC);
+			handle = open(nombreArchivoExterno, O_WRONLY|O_TRUNC, 0664);
 		}
 	} else {
-		handle = creat(nombreArchivoExterno, O_WRONLY);
+		handle = creat(nombreArchivoExterno, 0644);
 	}
 
 	/// Copiamos bloque a bloque del archivo interno al externo
@@ -220,22 +220,7 @@ int myExport(MiSistemaDeFicheros* miSistemaDeFicheros,
 			miSistemaDeFicheros->directorio.archivos[posDirectorio].idxNodoI;
 
 	exportaDatos(miSistemaDeFicheros, handle, idxNodoI);
-	/*
-	int i;
-	char buffer[TAM_BLOQUE_BYTES];
-	EstructuraNodoI* temp = miSistemaDeFicheros->nodosI[idxNodoI];
-	int bytesRestantes = miSistemaDeFicheros->superBloque.tamBloque - (temp->numBloques * miSistemaDeFicheros->superBloque.tamBloque - temp->tamArchivo);
-	for (i = 0; i < miSistemaDeFicheros->nodosI[idxNodoI]->numBloques - 1; ++i) {
-		if (write(handle, &buffer, TAM_BLOQUE_BYTES) == -1) {
-			perror("Falló write en escribeDatos");
-			return -1;
-		}
-	}
-
-	if (write(handle, &buffer, bytesRestantes) == -1) {
-	        perror("Falló write (2) en escribeDatos");
-	    }
-*/
+	
 	if (close(handle) == -1) {
 		perror("myExport close");
 		printf("Error, myExport close.\n");
