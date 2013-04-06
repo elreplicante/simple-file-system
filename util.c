@@ -199,7 +199,7 @@ int myExport(MiSistemaDeFicheros* miSistemaDeFicheros,
 	// ...
 
 	/// Si ya existe el archivo nombreArchivoExterno en linux preguntamos si sobreescribir
-	handle = open(nombreArchivoExterno, O_WRONLY);
+	handle = open(nombreArchivoExterno, O_WRONLY, 0664);
 	if (handle != -1) {
 		printf("El archivo ya existe,desea sobreescribir?(y/N):\n");
 		char option;
@@ -207,7 +207,7 @@ int myExport(MiSistemaDeFicheros* miSistemaDeFicheros,
 		if (option == 'n' || option == 'N') {
 			printf("%s", "Escribe otro nombre de archivo:\n");
 			scanf("%s", nombreArchivoExterno);
-			handle = creat(nombreArchivoExterno, O_WRONLY);
+			handle = creat(nombreArchivoExterno, 0644);
 		} else if (option == 'y' || option == 'Y') {
 			handle = open(nombreArchivoExterno, O_WRONLY|O_TRUNC, 0664);
 		}
